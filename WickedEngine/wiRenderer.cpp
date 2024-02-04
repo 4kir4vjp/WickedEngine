@@ -4265,15 +4265,25 @@ void UpdateRenderData(
 	{
 		auto range = wi::profiler::BeginRangeGPU("Wind", cmd);
 		device->EventBegin("Wind", cmd);
-
-		device->BindComputeShader(&shaders[CSTYPE_WIND], cmd);
-		device->BindUAV(&textures[TEXTYPE_3D_WIND], 0, cmd);
-		device->BindUAV(&textures[TEXTYPE_3D_WIND_PREV], 1, cmd);
-		const TextureDesc& desc = textures[TEXTYPE_3D_WIND].GetDesc();
-		device->Dispatch(desc.width / 8, desc.height / 8, desc.depth / 8, cmd);
+		if (
+			vis.scene->weather.windDirection.x == 0 &&
+			vis.scene->weather.windDirection.y == 0 &&
+			vis.scene->weather.windDirection.z == 0
+			)
+		{
+			device->ClearUAV(&textures[TEXTYPE_3D_WIND], 0, cmd);
+			device->ClearUAV(&textures[TEXTYPE_3D_WIND_PREV], 0, cmd);
+		}
+		else
+		{
+			device->BindComputeShader(&shaders[CSTYPE_WIND], cmd);
+			device->BindUAV(&textures[TEXTYPE_3D_WIND], 0, cmd);
+			device->BindUAV(&textures[TEXTYPE_3D_WIND_PREV], 1, cmd);
+			const TextureDesc& desc = textures[TEXTYPE_3D_WIND].GetDesc();
+			device->Dispatch(desc.width / 8, desc.height / 8, desc.depth / 8, cmd);
+		}
 		barrier_stack.push_back(GPUBarrier::Image(&textures[TEXTYPE_3D_WIND], ResourceState::UNORDERED_ACCESS, textures[TEXTYPE_3D_WIND].desc.layout));
 		barrier_stack.push_back(GPUBarrier::Image(&textures[TEXTYPE_3D_WIND_PREV], ResourceState::UNORDERED_ACCESS, textures[TEXTYPE_3D_WIND_PREV].desc.layout));
-
 		device->EventEnd(cmd);
 		wi::profiler::EndRange(range);
 	}
@@ -8417,24 +8427,14 @@ void CreateVXGIResources(VXGIResources& res, XMUINT2 resolution)
 	desc.width = resolution.x;
 	desc.height = resolution.y;
 	desc.format = Format::R11G11B10_FLOAT;
-	device->CreateTexture(&desc, nullptr, &res.diffuse[0]);
-	device->SetName(&res.diffuse[0], "vxgi.diffuse[0]");
-
-	desc.width = resolution.x / VXGI_DIFFUSE_UPSAMPLING;
-	desc.height = resolution.y / VXGI_DIFFUSE_UPSAMPLING;
-	device->CreateTexture(&desc, nullptr, &res.diffuse[1]);
-	device->SetName(&res.diffuse[1], "vxgi.diffuse[1]");
+	device->CreateTexture(&desc, nullptr, &res.diffuse);
+	device->SetName(&res.diffuse, "vxgi.diffuse");
 
 	desc.width = resolution.x;
 	desc.height = resolution.y;
 	desc.format = Format::R16G16B16A16_FLOAT;
-	device->CreateTexture(&desc, nullptr, &res.specular[0]);
-	device->SetName(&res.specular[0], "vxgi.specular[0]");
-
-	desc.width = resolution.x / VXGI_SPECULAR_UPSAMPLING;
-	desc.height = resolution.y / VXGI_SPECULAR_UPSAMPLING;
-	device->CreateTexture(&desc, nullptr, &res.specular[1]);
-	device->SetName(&res.specular[1], "vxgi.specular[1]");
+	device->CreateTexture(&desc, nullptr, &res.specular);
+	device->SetName(&res.specular, "vxgi.specular");
 
 	res.pre_clear = true;
 }
@@ -8642,8 +8642,7 @@ void VXGI_Resolve(
 	const VXGIResources& res,
 	const Scene& scene,
 	Texture texture_lineardepth,
-	CommandList cmd,
-	bool fullres
+	CommandList cmd
 )
 {
 	if (!GetVXGIEnabled() || !scene.vxgi.radiance.IsValid())
@@ -8661,41 +8660,26 @@ void VXGI_Resolve(
 		res.pre_clear = false;
 		{
 			GPUBarrier barriers[] = {
-				GPUBarrier::Image(&res.diffuse[0], ResourceState::SHADER_RESOURCE, ResourceState::UNORDERED_ACCESS),
-				GPUBarrier::Image(&res.diffuse[1], ResourceState::SHADER_RESOURCE, ResourceState::UNORDERED_ACCESS),
-				GPUBarrier::Image(&res.specular[0], ResourceState::SHADER_RESOURCE, ResourceState::UNORDERED_ACCESS),
-				GPUBarrier::Image(&res.specular[1], ResourceState::SHADER_RESOURCE, ResourceState::UNORDERED_ACCESS),
+				GPUBarrier::Image(&res.diffuse, ResourceState::SHADER_RESOURCE, ResourceState::UNORDERED_ACCESS),
+				GPUBarrier::Image(&res.specular, ResourceState::SHADER_RESOURCE, ResourceState::UNORDERED_ACCESS),
 			};
 			device->Barrier(barriers, arraysize(barriers), cmd);
 		}
-		device->ClearUAV(&res.diffuse[0], 0, cmd);
-		device->ClearUAV(&res.diffuse[1], 0, cmd);
-		device->ClearUAV(&res.specular[0], 0, cmd);
-		device->ClearUAV(&res.specular[1], 0, cmd);
+		device->ClearUAV(&res.diffuse, 0, cmd);
+		device->ClearUAV(&res.specular, 0, cmd);
 		{
 			GPUBarrier barriers[] = {
-				GPUBarrier::Image(&res.diffuse[0], ResourceState::UNORDERED_ACCESS, ResourceState::SHADER_RESOURCE),
-				GPUBarrier::Image(&res.diffuse[1], ResourceState::UNORDERED_ACCESS, ResourceState::SHADER_RESOURCE),
-				GPUBarrier::Image(&res.specular[0], ResourceState::UNORDERED_ACCESS, ResourceState::SHADER_RESOURCE),
-				GPUBarrier::Image(&res.specular[1], ResourceState::UNORDERED_ACCESS, ResourceState::SHADER_RESOURCE),
+				GPUBarrier::Image(&res.diffuse, ResourceState::UNORDERED_ACCESS, ResourceState::SHADER_RESOURCE),
+				GPUBarrier::Image(&res.specular, ResourceState::UNORDERED_ACCESS, ResourceState::SHADER_RESOURCE),
 			};
 			device->Barrier(barriers, arraysize(barriers), cmd);
 		}
 	}
 
-	if(fullres)
 	{
 		GPUBarrier barriers[] = {
-			GPUBarrier::Image(&res.diffuse[0], ResourceState::SHADER_RESOURCE, ResourceState::UNORDERED_ACCESS),
-			GPUBarrier::Image(&res.specular[0], ResourceState::SHADER_RESOURCE, ResourceState::UNORDERED_ACCESS),
-		};
-		device->Barrier(barriers, arraysize(barriers), cmd);
-	}
-	else
-	{
-		GPUBarrier barriers[] = {
-			GPUBarrier::Image(&res.diffuse[1], ResourceState::SHADER_RESOURCE, ResourceState::UNORDERED_ACCESS),
-			GPUBarrier::Image(&res.specular[1], ResourceState::SHADER_RESOURCE, ResourceState::UNORDERED_ACCESS),
+			GPUBarrier::Image(&res.diffuse, ResourceState::SHADER_RESOURCE, ResourceState::UNORDERED_ACCESS),
+			GPUBarrier::Image(&res.specular, ResourceState::SHADER_RESOURCE, ResourceState::UNORDERED_ACCESS),
 		};
 		device->Barrier(barriers, arraysize(barriers), cmd);
 	}
@@ -8705,18 +8689,9 @@ void VXGI_Resolve(
 		device->BindComputeShader(&shaders[CSTYPE_VXGI_RESOLVE_DIFFUSE], cmd);
 
 		PostProcess postprocess;
-		if (fullres)
-		{
-			device->BindUAV(&res.diffuse[0], 0, cmd);
-			postprocess.resolution.x = res.diffuse[0].desc.width;
-			postprocess.resolution.y = res.diffuse[0].desc.height;
-		}
-		else
-		{
-			device->BindUAV(&res.diffuse[1], 0, cmd);
-			postprocess.resolution.x = res.diffuse[1].desc.width;
-			postprocess.resolution.y = res.diffuse[1].desc.height;
-		}
+		device->BindUAV(&res.diffuse, 0, cmd);
+		postprocess.resolution.x = res.diffuse.desc.width;
+		postprocess.resolution.y = res.diffuse.desc.height;
 		postprocess.resolution_rcp.x = 1.0f / postprocess.resolution.x;
 		postprocess.resolution_rcp.y = 1.0f / postprocess.resolution.y;
 		device->PushConstants(&postprocess, sizeof(postprocess), cmd);
@@ -8736,18 +8711,9 @@ void VXGI_Resolve(
 		device->BindComputeShader(&shaders[CSTYPE_VXGI_RESOLVE_SPECULAR], cmd);
 
 		PostProcess postprocess;
-		if (fullres)
-		{
-			device->BindUAV(&res.specular[0], 0, cmd);
-			postprocess.resolution.x = res.specular[0].desc.width;
-			postprocess.resolution.y = res.specular[0].desc.height;
-		}
-		else
-		{
-			device->BindUAV(&res.specular[1], 0, cmd);
-			postprocess.resolution.x = res.specular[1].desc.width;
-			postprocess.resolution.y = res.specular[1].desc.height;
-		}
+		device->BindUAV(&res.specular, 0, cmd);
+		postprocess.resolution.x = res.specular.desc.width;
+		postprocess.resolution.y = res.specular.desc.height;
 		postprocess.resolution_rcp.x = 1.0f / postprocess.resolution.x;
 		postprocess.resolution_rcp.y = 1.0f / postprocess.resolution.y;
 		device->PushConstants(&postprocess, sizeof(postprocess), cmd);
@@ -8761,44 +8727,12 @@ void VXGI_Resolve(
 		device->EventEnd(cmd);
 	}
 
-	if(fullres)
 	{
 		GPUBarrier barriers[] = {
-			GPUBarrier::Image(&res.diffuse[0], ResourceState::UNORDERED_ACCESS, ResourceState::SHADER_RESOURCE),
-			GPUBarrier::Image(&res.specular[0], ResourceState::UNORDERED_ACCESS, ResourceState::SHADER_RESOURCE),
+			GPUBarrier::Image(&res.diffuse, ResourceState::UNORDERED_ACCESS, ResourceState::SHADER_RESOURCE),
+			GPUBarrier::Image(&res.specular, ResourceState::UNORDERED_ACCESS, ResourceState::SHADER_RESOURCE),
 		};
 		device->Barrier(barriers, arraysize(barriers), cmd);
-	}
-	else
-	{
-		GPUBarrier barriers[] = {
-			GPUBarrier::Image(&res.diffuse[1], ResourceState::UNORDERED_ACCESS, ResourceState::SHADER_RESOURCE),
-			GPUBarrier::Image(&res.specular[1], ResourceState::UNORDERED_ACCESS, ResourceState::SHADER_RESOURCE),
-		};
-		device->Barrier(barriers, arraysize(barriers), cmd);
-	}
-
-	if (!fullres)
-	{
-		const float depth_threshold = 0.5f;
-
-		Postprocess_Upsample_Bilateral(
-			res.diffuse[1],
-			texture_lineardepth,
-			res.diffuse[0],
-			cmd,
-			false,
-			depth_threshold
-		);
-
-		Postprocess_Upsample_Bilateral(
-			res.specular[1],
-			texture_lineardepth,
-			res.specular[0],
-			cmd,
-			false,
-			depth_threshold
-		);
 	}
 
 	wi::profiler::EndRange(range);
@@ -8824,25 +8758,54 @@ void CreateTiledLightResources(TiledLightResources& res, XMUINT2 resolution)
 	{
 		GPUBufferDesc bd;
 		bd.stride = sizeof(uint);
-		bd.size = res.tileCount.x * res.tileCount.y * bd.stride * SHADER_ENTITY_TILE_BUCKET_COUNT;
+		bd.size = res.tileCount.x * res.tileCount.y * bd.stride * SHADER_ENTITY_TILE_BUCKET_COUNT * 2; // *2: opaque and transparent arrays
 		bd.usage = Usage::DEFAULT;
 		bd.bind_flags = BindFlag::UNORDERED_ACCESS | BindFlag::SHADER_RESOURCE;
 		bd.misc_flags = ResourceMiscFlag::BUFFER_STRUCTURED;
-		device->CreateBuffer(&bd, nullptr, &res.entityTiles_Opaque);
-		device->CreateBuffer(&bd, nullptr, &res.entityTiles_Transparent);
-
-		device->SetName(&res.entityTiles_Opaque, "entityTiles_Opaque");
-		device->SetName(&res.entityTiles_Transparent, "entityTiles_Transparent");
+		device->CreateBuffer(&bd, nullptr, &res.entityTiles);
+		device->SetName(&res.entityTiles, "entityTiles");
 	}
 }
 void ComputeTiledLightCulling(
 	const TiledLightResources& res,
+	const Visibility& vis,
 	const Texture& debugUAV,
 	CommandList cmd
 )
 {
-	BindCommonResources(cmd);
 	auto range = wi::profiler::BeginRangeGPU("Entity Culling", cmd);
+
+	// Initial barriers to put all resources into UAV:
+	{
+		GPUBarrier barriers[] = {
+			GPUBarrier::Buffer(&res.tileFrustums, ResourceState::SHADER_RESOURCE, ResourceState::UNORDERED_ACCESS),
+			GPUBarrier::Buffer(&res.entityTiles, ResourceState::SHADER_RESOURCE, ResourceState::UNORDERED_ACCESS),
+		};
+		device->Barrier(barriers, arraysize(barriers), cmd);
+	}
+
+	if (
+		vis.visibleLights.empty() &&
+		vis.visibleDecals.empty() &&
+		vis.visibleEnvProbes.empty()
+		)
+	{
+		device->EventBegin("Tiled Entity Clear Only", cmd);
+		device->ClearUAV(&res.tileFrustums, 0, cmd);
+		device->ClearUAV(&res.entityTiles, 0, cmd);
+		{
+			GPUBarrier barriers[] = {
+				GPUBarrier::Buffer(&res.tileFrustums, ResourceState::UNORDERED_ACCESS, ResourceState::SHADER_RESOURCE),
+				GPUBarrier::Buffer(&res.entityTiles, ResourceState::UNORDERED_ACCESS, ResourceState::SHADER_RESOURCE),
+			};
+			device->Barrier(barriers, arraysize(barriers), cmd);
+		}
+		device->EventEnd(cmd);
+		wi::profiler::EndRange(range);
+		return;
+	}
+
+	BindCommonResources(cmd);
 
 	// Frustum computation
 	{
@@ -8854,19 +8817,19 @@ void ComputeTiledLightCulling(
 		};
 		device->BindUAVs(uavs, 0, arraysize(uavs), cmd);
 
-		{
-			GPUBarrier barriers[] = {
-				GPUBarrier::Buffer(&res.tileFrustums, ResourceState::SHADER_RESOURCE, ResourceState::UNORDERED_ACCESS)
-			};
-			device->Barrier(barriers, arraysize(barriers), cmd);
-		}
-
 		device->Dispatch(
 			(res.tileCount.x + TILED_CULLING_BLOCKSIZE - 1) / TILED_CULLING_BLOCKSIZE,
 			(res.tileCount.y + TILED_CULLING_BLOCKSIZE - 1) / TILED_CULLING_BLOCKSIZE,
 			1,
 			cmd
 		);
+
+		{
+			GPUBarrier barriers[] = {
+				GPUBarrier::Buffer(&res.tileFrustums, ResourceState::UNORDERED_ACCESS, ResourceState::SHADER_RESOURCE),
+			};
+			device->Barrier(barriers, arraysize(barriers), cmd);
+		}
 
 		device->EventEnd(cmd);
 	}
@@ -8888,29 +8851,11 @@ void ComputeTiledLightCulling(
 		}
 
 		const GPUResource* uavs[] = {
-			&res.entityTiles_Transparent,
-			&res.entityTiles_Opaque,
+			&res.entityTiles,
 		};
 		device->BindUAVs(uavs, 0, arraysize(uavs), cmd);
 
-		{
-			GPUBarrier barriers[] = {
-				GPUBarrier::Buffer(&res.tileFrustums, ResourceState::UNORDERED_ACCESS, ResourceState::SHADER_RESOURCE),
-				GPUBarrier::Buffer(&res.entityTiles_Transparent, ResourceState::SHADER_RESOURCE, ResourceState::UNORDERED_ACCESS),
-				GPUBarrier::Buffer(&res.entityTiles_Opaque, ResourceState::SHADER_RESOURCE, ResourceState::UNORDERED_ACCESS),
-			};
-			device->Barrier(barriers, arraysize(barriers), cmd);
-		}
-
 		device->Dispatch(res.tileCount.x, res.tileCount.y, 1, cmd);
-
-		{
-			GPUBarrier barriers[] = {
-				GPUBarrier::Buffer(&res.entityTiles_Opaque, ResourceState::UNORDERED_ACCESS, ResourceState::SHADER_RESOURCE),
-				GPUBarrier::Buffer(&res.entityTiles_Transparent, ResourceState::UNORDERED_ACCESS, ResourceState::SHADER_RESOURCE),
-			};
-			device->Barrier(barriers, arraysize(barriers), cmd);
-		}
 
 		device->EventEnd(cmd);
 	}
@@ -9794,6 +9739,7 @@ void BindCameraCB(
 	shadercam.scissor_uv.w = (shadercam.scissor.w - 0.5f) * shadercam.internal_resolution_rcp.y;
 
 	shadercam.entity_culling_tilecount = GetEntityCullingTileCount(shadercam.internal_resolution);
+	shadercam.entity_culling_tile_bucket_count_flat = shadercam.entity_culling_tilecount.x * shadercam.entity_culling_tilecount.y * SHADER_ENTITY_TILE_BUCKET_COUNT;
 	shadercam.sample_count = camera.sample_count;
 	shadercam.visibility_tilecount = GetVisibilityTileCount(shadercam.internal_resolution);
 	shadercam.visibility_tilecount_flat = shadercam.visibility_tilecount.x * shadercam.visibility_tilecount.y;
@@ -9804,8 +9750,7 @@ void BindCameraCB(
 	shadercam.texture_velocity_index = camera.texture_velocity_index;
 	shadercam.texture_normal_index = camera.texture_normal_index;
 	shadercam.texture_roughness_index = camera.texture_roughness_index;
-	shadercam.buffer_entitytiles_opaque_index = camera.buffer_entitytiles_opaque_index;
-	shadercam.buffer_entitytiles_transparent_index = camera.buffer_entitytiles_transparent_index;
+	shadercam.buffer_entitytiles_index = camera.buffer_entitytiles_index;
 	shadercam.texture_reflection_index = camera.texture_reflection_index;
 	shadercam.texture_reflection_depth_index = camera.texture_reflection_depth_index;
 	shadercam.texture_refraction_index = camera.texture_refraction_index;
@@ -13260,14 +13205,12 @@ void CreateRTShadowResources(RTShadowResources& res, XMUINT2 resolution)
 	res.frame = 0;
 
 	TextureDesc desc;
-	desc.width = resolution.x / 2;
-	desc.height = resolution.y / 2;
+	desc.width = resolution.x;
+	desc.height = resolution.y;
 	desc.bind_flags = BindFlag::SHADER_RESOURCE | BindFlag::UNORDERED_ACCESS;
 	desc.layout = ResourceState::SHADER_RESOURCE_COMPUTE;
 
 	desc.format = Format::R32G32B32A32_UINT;
-	device->CreateTexture(&desc, nullptr, &res.temp);
-	device->SetName(&res.temp, "rtshadow_temp");
 	device->CreateTexture(&desc, nullptr, &res.temporal[0]);
 	device->SetName(&res.temporal[0], "rtshadow_temporal[0]");
 	device->CreateTexture(&desc, nullptr, &res.temporal[1]);
@@ -13330,6 +13273,7 @@ void Postprocess_RTShadow(
 	{
 		// Maybe we don't need to clear them all, but it's safer this way:
 		GPUBarrier barriers[] = {
+			GPUBarrier::Image(&output, output.desc.layout, ResourceState::UNORDERED_ACCESS),
 			GPUBarrier::Image(&res.temporal[0], res.temporal[0].desc.layout, ResourceState::UNORDERED_ACCESS),
 			GPUBarrier::Image(&res.temporal[1], res.temporal[1].desc.layout, ResourceState::UNORDERED_ACCESS),
 			GPUBarrier::Image(&res.denoised, res.denoised.desc.layout, ResourceState::UNORDERED_ACCESS),
@@ -13352,6 +13296,7 @@ void Postprocess_RTShadow(
 			GPUBarrier::Image(&res.moments[3][1], res.moments[3][1].desc.layout, ResourceState::UNORDERED_ACCESS),
 		};
 		device->Barrier(barriers, arraysize(barriers), cmd);
+		device->ClearUAV(&output, 0, cmd);
 		device->ClearUAV(&res.temporal[0], 0, cmd);
 		device->ClearUAV(&res.temporal[1], 0, cmd);
 		device->ClearUAV(&res.denoised, 0, cmd);
@@ -13379,7 +13324,7 @@ void Postprocess_RTShadow(
 		device->Barrier(barriers, arraysize(barriers), cmd);
 	}
 
-	const TextureDesc& desc = res.temp.GetDesc();
+	const TextureDesc& desc = output.GetDesc();
 
 	BindCommonResources(cmd);
 
@@ -13398,7 +13343,7 @@ void Postprocess_RTShadow(
 	device->PushConstants(&postprocess, sizeof(postprocess), cmd);
 
 	const GPUResource* uavs[] = {
-		&res.temp,
+		&output,
 		&res.normals,
 		&res.tiles
 	};
@@ -13406,7 +13351,7 @@ void Postprocess_RTShadow(
 
 	{
 		GPUBarrier barriers[] = {
-			GPUBarrier::Image(&res.temp, res.temp.desc.layout, ResourceState::UNORDERED_ACCESS),
+			GPUBarrier::Image(&output, output.desc.layout, ResourceState::UNORDERED_ACCESS),
 			GPUBarrier::Image(&res.normals, res.normals.desc.layout, ResourceState::UNORDERED_ACCESS),
 			GPUBarrier::Buffer(&res.tiles, ResourceState::SHADER_RESOURCE_COMPUTE, ResourceState::UNORDERED_ACCESS),
 		};
@@ -13422,7 +13367,7 @@ void Postprocess_RTShadow(
 
 	{
 		GPUBarrier barriers[] = {
-			GPUBarrier::Image(&res.temp, ResourceState::UNORDERED_ACCESS, res.temp.desc.layout),
+			GPUBarrier::Image(&output, ResourceState::UNORDERED_ACCESS, output.desc.layout),
 			GPUBarrier::Image(&res.normals, ResourceState::UNORDERED_ACCESS, res.normals.desc.layout),
 			GPUBarrier::Buffer(&res.tiles, ResourceState::UNORDERED_ACCESS, ResourceState::SHADER_RESOURCE_COMPUTE),
 		};
@@ -13643,7 +13588,7 @@ void Postprocess_RTShadow(
 		device->BindComputeShader(&shaders[CSTYPE_POSTPROCESS_RTSHADOW_DENOISE_TEMPORAL], cmd);
 		device->PushConstants(&postprocess, sizeof(postprocess), cmd);
 
-		device->BindResource(&res.temp, 0, cmd);
+		device->BindResource(&output, 0, cmd);
 		device->BindResource(&res.temporal[temporal_history], 1, cmd);
 		device->BindResource(&res.denoised, 3, cmd);
 
@@ -13676,26 +13621,15 @@ void Postprocess_RTShadow(
 		device->EventEnd(cmd);
 	}
 
-	Postprocess_Upsample_Bilateral(
-		res.temporal[temporal_output],
-		lineardepth,
-		output,
-		cmd
-	);
+	device->Barrier(GPUBarrier::Image(&output, output.desc.layout, ResourceState::COPY_DST), cmd);
+	device->CopyResource(&output, &res.temporal[temporal_output], cmd);
+	device->Barrier(GPUBarrier::Image(&output, ResourceState::COPY_DST, output.desc.layout), cmd);
 
 	wi::profiler::EndRange(prof_range);
 	device->EventEnd(cmd);
 }
 void CreateScreenSpaceShadowResources(ScreenSpaceShadowResources& res, XMUINT2 resolution)
 {
-	TextureDesc desc;
-	desc.width = resolution.x / 2;
-	desc.height = resolution.y / 2;
-	desc.format = Format::R32G32B32A32_UINT;
-	desc.bind_flags = BindFlag::SHADER_RESOURCE | BindFlag::UNORDERED_ACCESS;
-	desc.layout = ResourceState::SHADER_RESOURCE_COMPUTE;
-	device->CreateTexture(&desc, nullptr, &res.lowres);
-	device->SetName(&res.lowres, "screenspaceshadow.lowres");
 }
 void Postprocess_ScreenSpaceShadow(
 	const ScreenSpaceShadowResources& res,
@@ -13710,7 +13644,7 @@ void Postprocess_ScreenSpaceShadow(
 	device->EventBegin("Postprocess_ScreenSpaceShadow", cmd);
 	auto prof_range = wi::profiler::BeginRangeGPU("ScreenSpaceShadow", cmd);
 
-	const TextureDesc& desc = res.lowres.GetDesc();
+	const TextureDesc& desc = output.GetDesc();
 
 	device->BindComputeShader(&shaders[CSTYPE_POSTPROCESS_SCREENSPACESHADOW], cmd);
 
@@ -13724,16 +13658,19 @@ void Postprocess_ScreenSpaceShadow(
 	device->PushConstants(&postprocess, sizeof(postprocess), cmd);
 
 	const GPUResource* uavs[] = {
-		&res.lowres,
+		&output,
 	};
 	device->BindUAVs(uavs, 0, arraysize(uavs), cmd);
 
 	{
 		GPUBarrier barriers[] = {
-			GPUBarrier::Image(&res.lowres, res.lowres.desc.layout, ResourceState::UNORDERED_ACCESS),
+			GPUBarrier::Image(&output, output.desc.layout, ResourceState::UNORDERED_ACCESS),
 		};
 		device->Barrier(barriers, arraysize(barriers), cmd);
 	}
+
+	device->ClearUAV(&output, 0, cmd);
+	device->Barrier(GPUBarrier::Memory(&output), cmd);
 
 	device->Dispatch(
 		(desc.width + POSTPROCESS_BLOCKSIZE - 1) / POSTPROCESS_BLOCKSIZE,
@@ -13744,17 +13681,10 @@ void Postprocess_ScreenSpaceShadow(
 
 	{
 		GPUBarrier barriers[] = {
-			GPUBarrier::Image(&res.lowres, ResourceState::UNORDERED_ACCESS, res.lowres.desc.layout),
+			GPUBarrier::Image(&output, ResourceState::UNORDERED_ACCESS, output.desc.layout),
 		};
 		device->Barrier(barriers, arraysize(barriers), cmd);
 	}
-
-	Postprocess_Upsample_Bilateral(
-		res.lowres,
-		lineardepth,
-		output,
-		cmd
-	);
 
 	wi::profiler::EndRange(prof_range);
 	device->EventEnd(cmd);

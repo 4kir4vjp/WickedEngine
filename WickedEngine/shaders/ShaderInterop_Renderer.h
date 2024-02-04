@@ -72,6 +72,7 @@ static const uint SHADERMATERIAL_OPTION_BIT_DOUBLE_SIDED = 1 << 7;
 static const uint SHADERMATERIAL_OPTION_BIT_TRANSPARENT = 1 << 8;
 static const uint SHADERMATERIAL_OPTION_BIT_ADDITIVE = 1 << 9;
 static const uint SHADERMATERIAL_OPTION_BIT_UNLIT = 1 << 10;
+static const uint SHADERMATERIAL_OPTION_BIT_USE_VERTEXAO = 1 << 11;
 
 // Same as MaterialComponent::TEXTURESLOT
 enum TEXTURESLOT
@@ -397,6 +398,7 @@ struct ShaderMaterial
 #endif // __cplusplus
 
 	inline bool IsUsingVertexColors() { return options & SHADERMATERIAL_OPTION_BIT_USE_VERTEXCOLORS; }
+	inline bool IsUsingVertexAO() { return options & SHADERMATERIAL_OPTION_BIT_USE_VERTEXAO; }
 	inline bool IsUsingSpecularGlossinessWorkflow() { return options & SHADERMATERIAL_OPTION_BIT_SPECULARGLOSSINESS_WORKFLOW; }
 	inline bool IsOcclusionEnabled_Primary() { return options & SHADERMATERIAL_OPTION_BIT_OCCLUSION_PRIMARY; }
 	inline bool IsOcclusionEnabled_Secondary() { return options & SHADERMATERIAL_OPTION_BIT_OCCLUSION_SECONDARY; }
@@ -477,12 +479,10 @@ struct ShaderGeometry
 		ib = -1;
 		vb_pos_wind = -1;
 		vb_uvs = -1;
-
 		vb_nor = -1;
 		vb_tan = -1;
 		vb_col = -1;
 		vb_atl = -1;
-
 		vb_pre = -1;
 		materialIndex = 0;
 		meshletOffset = 0;
@@ -568,6 +568,11 @@ struct ShaderMeshInstance
 	float3 center;
 	float radius;
 
+	int vb_ao;
+	int padding0;
+	int padding1;
+	int padding2;
+
 	ShaderTransform transform;
 	ShaderTransform transformInverseTranspose; // This correctly handles non uniform scaling for normals
 	ShaderTransform transformPrev;
@@ -588,6 +593,7 @@ struct ShaderMeshInstance
 		fadeDistance = 0;
 		center = float3(0, 0, 0);
 		radius = 0;
+		vb_ao = -1;
 		transform.init();
 		transformInverseTranspose.init();
 		transformPrev.init();
@@ -1022,7 +1028,8 @@ struct ShaderCamera
 	uint4 scissor; // scissor in physical coordinates (left,top,right,bottom) range: [0, internal_resolution]
 	float4 scissor_uv; // scissor in screen UV coordinates (left,top,right,bottom) range: [0, 1]
 
-	uint3 entity_culling_tilecount;
+	uint2 entity_culling_tilecount;
+	uint entity_culling_tile_bucket_count_flat; // tilecount.x * tilecount.y * SHADER_ENTITY_TILE_BUCKET_COUNT (the total number of uint buckets for the whole screen)
 	uint sample_count;
 
 	uint2 visibility_tilecount;
@@ -1037,9 +1044,9 @@ struct ShaderCamera
 	int texture_velocity_index;
 	int texture_normal_index;
 	int texture_roughness_index;
-	int buffer_entitytiles_opaque_index;
+	int buffer_entitytiles_index;
 
-	int buffer_entitytiles_transparent_index;
+	int padding;
 	int texture_reflection_index;
 	int texture_reflection_depth_index;
 	int texture_refraction_index;
@@ -1093,6 +1100,7 @@ struct ShaderCamera
 		scissor = {};
 		scissor_uv = {};
 		entity_culling_tilecount = {};
+		entity_culling_tile_bucket_count_flat = 0;
 		sample_count = {};
 		visibility_tilecount = {};
 		visibility_tilecount_flat = {};
@@ -1105,8 +1113,7 @@ struct ShaderCamera
 		texture_velocity_index = -1;
 		texture_normal_index = -1;
 		texture_roughness_index = -1;
-		buffer_entitytiles_opaque_index = -1;
-		buffer_entitytiles_transparent_index = -1;
+		buffer_entitytiles_index = -1;
 		texture_reflection_index = -1;
 		texture_refraction_index = -1;
 		texture_waterriples_index = -1;
