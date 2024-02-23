@@ -6,7 +6,6 @@
 #include "wiHelper.h"
 #include "wiTextureHelper.h"
 #include "wiEnums.h"
-#include "wiRectPacker.h"
 #include "wiBacklog.h"
 #include "wiProfiler.h"
 #include "wiOcean.h"
@@ -379,6 +378,7 @@ SHADERTYPE GetVSTYPE(RENDERPASS renderPass, bool tessellation, bool alphatest, b
 		}
 		break;
 	case RENDERPASS_PREPASS:
+	case RENDERPASS_PREPASS_DEPTHONLY:
 		if (tessellation)
 		{
 			if (alphatest)
@@ -492,6 +492,7 @@ SHADERTYPE GetHSTYPE(RENDERPASS renderPass, bool tessellation, bool alphatest)
 		switch (renderPass)
 		{
 		case RENDERPASS_PREPASS:
+		case RENDERPASS_PREPASS_DEPTHONLY:
 			if (alphatest)
 			{
 				return HSTYPE_OBJECT_PREPASS_ALPHATEST;
@@ -516,6 +517,7 @@ SHADERTYPE GetDSTYPE(RENDERPASS renderPass, bool tessellation, bool alphatest)
 		switch (renderPass)
 		{
 		case RENDERPASS_PREPASS:
+		case RENDERPASS_PREPASS_DEPTHONLY:
 			if (alphatest)
 			{
 				return DSTYPE_OBJECT_PREPASS_ALPHATEST;
@@ -548,6 +550,16 @@ SHADERTYPE GetPSTYPE(RENDERPASS renderPass, bool alphatest, bool transparent, Ma
 		else
 		{
 			realPS = PSTYPE_OBJECT_PREPASS;
+		}
+		break;
+	case RENDERPASS_PREPASS_DEPTHONLY:
+		if (alphatest)
+		{
+			realPS = PSTYPE_OBJECT_PREPASS_DEPTHONLY_ALPHATEST;
+		}
+		else
+		{
+			realPS = PSTYPE_OBJECT_PREPASS_DEPTHONLY;
 		}
 		break;
 	case RENDERPASS_ENVMAPCAPTURE:
@@ -833,7 +845,10 @@ void LoadShaders()
 	wi::jobsystem::Execute(ctx, [](wi::jobsystem::JobArgs args) { LoadShader(ShaderStage::PS, shaders[PSTYPE_OBJECT_SIMPLE], "objectPS_simple.cso"); });
 	wi::jobsystem::Execute(ctx, [](wi::jobsystem::JobArgs args) { LoadShader(ShaderStage::PS, shaders[PSTYPE_OBJECT_PREPASS], "objectPS_prepass.cso"); });
 	wi::jobsystem::Execute(ctx, [](wi::jobsystem::JobArgs args) { LoadShader(ShaderStage::PS, shaders[PSTYPE_OBJECT_PREPASS_ALPHATEST], "objectPS_prepass_alphatest.cso"); });
+	wi::jobsystem::Execute(ctx, [](wi::jobsystem::JobArgs args) { LoadShader(ShaderStage::PS, shaders[PSTYPE_OBJECT_PREPASS_DEPTHONLY], "objectPS_prepass_depthonly.cso"); });
+	wi::jobsystem::Execute(ctx, [](wi::jobsystem::JobArgs args) { LoadShader(ShaderStage::PS, shaders[PSTYPE_OBJECT_PREPASS_DEPTHONLY_ALPHATEST], "objectPS_prepass_depthonly_alphatest.cso"); });
 	wi::jobsystem::Execute(ctx, [](wi::jobsystem::JobArgs args) { LoadShader(ShaderStage::PS, shaders[PSTYPE_IMPOSTOR_PREPASS], "impostorPS_prepass.cso"); });
+	wi::jobsystem::Execute(ctx, [](wi::jobsystem::JobArgs args) { LoadShader(ShaderStage::PS, shaders[PSTYPE_IMPOSTOR_PREPASS_DEPTHONLY], "impostorPS_prepass_depthonly.cso"); });
 	wi::jobsystem::Execute(ctx, [](wi::jobsystem::JobArgs args) { LoadShader(ShaderStage::PS, shaders[PSTYPE_IMPOSTOR_SIMPLE], "impostorPS_simple.cso"); });
 	wi::jobsystem::Execute(ctx, [](wi::jobsystem::JobArgs args) { LoadShader(ShaderStage::PS, shaders[PSTYPE_LIGHTVISUALIZER], "lightVisualizerPS.cso"); });
 	wi::jobsystem::Execute(ctx, [](wi::jobsystem::JobArgs args) { LoadShader(ShaderStage::PS, shaders[PSTYPE_VOLUMETRICLIGHT_DIRECTIONAL], "volumetricLight_DirectionalPS.cso"); });
@@ -1015,6 +1030,7 @@ void LoadShaders()
 	wi::jobsystem::Execute(ctx, [](wi::jobsystem::JobArgs args) { LoadShader(ShaderStage::CS, shaders[CSTYPE_POSTPROCESS_UPSAMPLE_BILATERAL_UNORM4], "upsample_bilateral_unorm4CS.cso"); });
 	wi::jobsystem::Execute(ctx, [](wi::jobsystem::JobArgs args) { LoadShader(ShaderStage::CS, shaders[CSTYPE_POSTPROCESS_UPSAMPLE_BILATERAL_UINT4], "upsample_bilateral_uint4CS.cso"); });
 	wi::jobsystem::Execute(ctx, [](wi::jobsystem::JobArgs args) { LoadShader(ShaderStage::CS, shaders[CSTYPE_POSTPROCESS_DOWNSAMPLE4X], "downsample4xCS.cso"); });
+	wi::jobsystem::Execute(ctx, [](wi::jobsystem::JobArgs args) { LoadShader(ShaderStage::CS, shaders[CSTYPE_POSTPROCESS_LINEARDEPTH], "lineardepthCS.cso"); });
 	wi::jobsystem::Execute(ctx, [](wi::jobsystem::JobArgs args) { LoadShader(ShaderStage::CS, shaders[CSTYPE_POSTPROCESS_NORMALSFROMDEPTH], "normalsfromdepthCS.cso"); });
 	wi::jobsystem::Execute(ctx, [](wi::jobsystem::JobArgs args) { LoadShader(ShaderStage::CS, shaders[CSTYPE_POSTPROCESS_SCREENSPACESHADOW], "screenspaceshadowCS.cso"); });
 
@@ -1243,6 +1259,10 @@ void LoadShaders()
 		case RENDERPASS_PREPASS:
 			desc.vs = &shaders[VSTYPE_IMPOSTOR];
 			desc.ps = &shaders[PSTYPE_IMPOSTOR_PREPASS];
+			break;
+		case RENDERPASS_PREPASS_DEPTHONLY:
+			desc.vs = &shaders[VSTYPE_IMPOSTOR];
+			desc.ps = &shaders[PSTYPE_IMPOSTOR_PREPASS_DEPTHONLY];
 			break;
 		default:
 			desc.vs = &shaders[VSTYPE_IMPOSTOR];
@@ -1656,12 +1676,12 @@ void LoadShaders()
 					{
 						for (uint32_t tessellation = 0; tessellation <= 1; ++tessellation)
 						{
-							if (tessellation && renderPass > RENDERPASS_PREPASS)
+							if (tessellation && renderPass > RENDERPASS_PREPASS_DEPTHONLY)
 								continue;
 							for (uint32_t alphatest = 0; alphatest <= 1; ++alphatest)
 							{
 								const bool transparency = blendMode != BLENDMODE_OPAQUE;
-								if (renderPass == RENDERPASS_PREPASS && transparency)
+								if ((renderPass == RENDERPASS_PREPASS || renderPass == RENDERPASS_PREPASS_DEPTHONLY) && transparency)
 									continue;
 
 								SHADERTYPE realVS = GetVSTYPE((RENDERPASS)renderPass, tessellation, alphatest, transparency);
@@ -1797,10 +1817,19 @@ void LoadShaders()
 								{
 								case RENDERPASS_MAIN:
 								case RENDERPASS_PREPASS:
+								case RENDERPASS_PREPASS_DEPTHONLY:
 								{
 									RenderPassInfo renderpass_info;
-									renderpass_info.rt_count = 1;
-									renderpass_info.rt_formats[0] = renderPass == RENDERPASS_MAIN ? format_rendertarget_main : format_idbuffer;
+									if (renderPass == RENDERPASS_PREPASS_DEPTHONLY)
+									{
+										renderpass_info.rt_count = 0;
+										renderpass_info.rt_formats[0] = Format::UNKNOWN;
+									}
+									else
+									{
+										renderpass_info.rt_count = 1;
+										renderpass_info.rt_formats[0] = renderPass == RENDERPASS_MAIN ? format_rendertarget_main : format_idbuffer;
+									}
 									renderpass_info.ds_format = format_depthbuffer_main;
 									const uint32_t msaa_support[] = { 1,2,4,8 };
 									for (uint32_t msaa : msaa_support)
@@ -2475,7 +2504,7 @@ inline void CreateSpotLightShadowCam(const LightComponent& light, SHCAM& shcam)
 {
 	shcam.init(light.position, light.rotation, 0.1f, light.GetRange(), light.outerConeAngle * 2);
 }
-inline void CreateDirLightShadowCams(const LightComponent& light, CameraComponent camera, SHCAM* shcams, size_t shcam_count)
+inline void CreateDirLightShadowCams(const LightComponent& light, CameraComponent camera, SHCAM* shcams, size_t shcam_count, const wi::rectpacker::Rect& shadow_rect)
 {
 	// remove camera jittering
 	camera.jitter = XMFLOAT2(0, 0);
@@ -2541,7 +2570,7 @@ inline void CreateDirLightShadowCams(const LightComponent& light, CameraComponen
 
 		// Snap cascade to texel grid:
 		const XMVECTOR extent = XMVectorSubtract(vMax, vMin);
-		const XMVECTOR texelSize = extent / float(light.shadow_rect.w);
+		const XMVECTOR texelSize = extent / float(shadow_rect.w);
 		vMin = XMVectorFloor(vMin / texelSize) * texelSize;
 		vMax = XMVectorFloor(vMax / texelSize) * texelSize;
 		center = (vMin + vMax) * 0.5f;
@@ -2822,8 +2851,13 @@ void RenderMeshes(
 				prev_ib = &mesh.generalBuffer;
 			}
 
-			if (renderPass != RENDERPASS_PREPASS && renderPass != RENDERPASS_VOXELIZE) // depth only alpha test will be full res
+			if (
+				renderPass != RENDERPASS_PREPASS &&
+				renderPass != RENDERPASS_PREPASS_DEPTHONLY &&
+				renderPass != RENDERPASS_VOXELIZE
+				) 
 			{
+				// depth only alpha test will be full res
 				device->BindShadingRate(material.shadingRate, cmd);
 			}
 
@@ -2925,7 +2959,7 @@ void RenderImpostors(
 	const PipelineState* pso = &PSO_impostor[renderPass];
 	if (IsWireRender())
 	{
-		if (renderPass != RENDERPASS_PREPASS)
+		if (renderPass != RENDERPASS_PREPASS && renderPass != RENDERPASS_PREPASS_DEPTHONLY)
 		{
 			pso = &PSO_impostor_wire;
 		}
@@ -3008,8 +3042,11 @@ void UpdateVisibility(Visibility& vis)
 	if (vis.flags & Visibility::ALLOW_LIGHTS)
 	{
 		// Cull lights:
-		vis.visibleLights.resize(vis.scene->aabb_lights.size());
-		wi::jobsystem::Dispatch(ctx, (uint32_t)vis.scene->aabb_lights.size(), groupSize, [&](wi::jobsystem::JobArgs args) {
+		const uint32_t light_loop = (uint32_t)std::min(vis.scene->aabb_lights.size(), vis.scene->lights.GetCount());
+		vis.visibleLights.resize(light_loop);
+		vis.visibleLightShadowRects.clear();
+		vis.visibleLightShadowRects.resize(light_loop);
+		wi::jobsystem::Dispatch(ctx, light_loop, groupSize, [&](wi::jobsystem::JobArgs args) {
 
 			// Setup stream compaction:
 			uint32_t& group_count = *(uint32_t*)args.sharedmemory;
@@ -3061,8 +3098,9 @@ void UpdateVisibility(Visibility& vis)
 	if (vis.flags & Visibility::ALLOW_OBJECTS)
 	{
 		// Cull objects:
-		vis.visibleObjects.resize(vis.scene->aabb_objects.size());
-		wi::jobsystem::Dispatch(ctx, (uint32_t)vis.scene->aabb_objects.size(), groupSize, [&](wi::jobsystem::JobArgs args) {
+		const uint32_t object_loop = (uint32_t)std::min(vis.scene->aabb_objects.size(), vis.scene->objects.GetCount());
+		vis.visibleObjects.resize(object_loop);
+		wi::jobsystem::Dispatch(ctx, object_loop, groupSize, [&](wi::jobsystem::JobArgs args) {
 
 			// Setup stream compaction:
 			uint32_t& group_count = *(uint32_t*)args.sharedmemory;
@@ -3081,8 +3119,13 @@ void UpdateVisibility(Visibility& vis)
 
 				const ObjectComponent& object = vis.scene->objects[args.jobIndex];
 				Scene::OcclusionResult& occlusion_result = vis.scene->occlusion_results_objects[args.jobIndex];
+				bool occluded = false;
+				if (vis.flags & Visibility::ALLOW_OCCLUSION_CULLING)
+				{
+					occluded = occlusion_result.IsOccluded();
+				}
 
-				if ((vis.flags & Visibility::ALLOW_REQUEST_REFLECTION) && object.IsRequestPlanarReflection() && !occlusion_result.IsOccluded())
+				if ((vis.flags & Visibility::ALLOW_REQUEST_REFLECTION) && object.IsRequestPlanarReflection() && !occluded)
 				{
 					// Planar reflection priority request:
 					float dist = wi::math::DistanceEstimated(vis.camera->Eye, object.center);
@@ -3134,8 +3177,9 @@ void UpdateVisibility(Visibility& vis)
 
 	if (vis.flags & Visibility::ALLOW_DECALS)
 	{
-		vis.visibleDecals.resize(vis.scene->aabb_decals.size());
-		wi::jobsystem::Dispatch(ctx, (uint32_t)vis.scene->aabb_decals.size(), groupSize, [&](wi::jobsystem::JobArgs args) {
+		const uint32_t decal_loop = (uint32_t)std::min(vis.scene->aabb_decals.size(), vis.scene->decals.GetCount());
+		vis.visibleDecals.resize(decal_loop);
+		wi::jobsystem::Dispatch(ctx, decal_loop, groupSize, [&](wi::jobsystem::JobArgs args) {
 
 			// Setup stream compaction:
 			uint32_t& group_count = *(uint32_t*)args.sharedmemory;
@@ -3253,56 +3297,26 @@ void UpdateVisibility(Visibility& vis)
 		}
 	}
 
-	wi::profiler::EndRange(range); // Frustum Culling
-}
-void UpdatePerFrameData(
-	Scene& scene,
-	const Visibility& vis,
-	FrameCB& frameCB,
-	float dt
-)
-{
-	// Update Voxelization parameters:
-	if (scene.objects.GetCount() > 0)
-	{
-		Scene::VXGI::ClipMap& clipmap = scene.vxgi.clipmaps[scene.vxgi.clipmap_to_update];
-		clipmap.voxelsize = scene.vxgi.clipmaps[0].voxelsize * (1u << scene.vxgi.clipmap_to_update);
-		const float texelSize = clipmap.voxelsize * 2;
-		XMFLOAT3 center = XMFLOAT3(std::floor(vis.camera->Eye.x / texelSize) * texelSize, std::floor(vis.camera->Eye.y / texelSize) * texelSize, std::floor(vis.camera->Eye.z / texelSize) * texelSize);
-		clipmap.offsetfromPrevFrame.x = int((clipmap.center.x - center.x) / texelSize);
-		clipmap.offsetfromPrevFrame.y = -int((clipmap.center.y - center.y) / texelSize);
-		clipmap.offsetfromPrevFrame.z = int((clipmap.center.z - center.z) / texelSize);
-		clipmap.center = center;
-		XMFLOAT3 extents = XMFLOAT3(scene.vxgi.res * clipmap.voxelsize, scene.vxgi.res * clipmap.voxelsize, scene.vxgi.res * clipmap.voxelsize);
-		if (extents.x != clipmap.extents.x || extents.y != clipmap.extents.y || extents.z != clipmap.extents.z)
-		{
-			scene.vxgi.pre_clear = true;
-		}
-		clipmap.extents = extents;
-	}
-
 	// Shadow atlas packing:
-	if (!vis.visibleLights.empty() || vis.scene->weather.rain_amount > 0)
+	if ((vis.flags & Visibility::ALLOW_SHADOW_ATLAS_PACKING) && !vis.visibleLights.empty() || vis.scene->weather.rain_amount > 0)
 	{
 		auto range = wi::profiler::BeginRangeCPU("Shadowmap packing");
-		static thread_local wi::rectpacker::State packer;
 		float iterative_scaling = 1;
 
 		while (iterative_scaling > 0.03f)
 		{
-			packer.clear();
-			if(vis.scene->weather.rain_amount > 0)
+			vis.shadow_packer.clear();
+			if (vis.scene->weather.rain_amount > 0)
 			{
 				// Rain blocker:
 				wi::rectpacker::Rect rect = {};
 				rect.id = -1;
 				rect.w = rect.h = 128;
-				packer.add_rect(rect);
+				vis.shadow_packer.add_rect(rect);
 			}
 			for (uint32_t lightIndex : vis.visibleLights)
 			{
-				LightComponent& light = scene.lights[lightIndex];
-				light.shadow_rect = {};
+				const LightComponent& light = vis.scene->lights[lightIndex];
 				if (!light.IsCastingShadow() || light.IsStatic())
 					continue;
 
@@ -3353,56 +3367,53 @@ void UpdatePerFrameData(
 				}
 				if (rect.w > 8 && rect.h > 8)
 				{
-					packer.add_rect(rect);
+					vis.shadow_packer.add_rect(rect);
 				}
 			}
-			if (!packer.rects.empty())
+			if (!vis.shadow_packer.rects.empty())
 			{
-				if (packer.pack(8192))
+				if (vis.shadow_packer.pack(8192))
 				{
-					for (auto& rect : packer.rects)
+					for (auto& rect : vis.shadow_packer.rects)
 					{
 						if (rect.id == -1)
 						{
 							// Rain blocker:
 							if (rect.was_packed)
 							{
-								scene.rain_blocker_dummy_light.shadow_rect = rect;
+								vis.rain_blocker_shadow_rect = rect;
 							}
 							else
 							{
-								scene.rain_blocker_dummy_light.shadow_rect = {};
+								vis.rain_blocker_shadow_rect = {};
 							}
 							continue;
 						}
 						uint32_t lightIndex = uint32_t(rect.id);
-						LightComponent& light = scene.lights[lightIndex];
+						wi::rectpacker::Rect& lightrect = vis.visibleLightShadowRects[lightIndex];
+						const LightComponent& light = vis.scene->lights[lightIndex];
 						if (rect.was_packed)
 						{
-							light.shadow_rect = rect;
+							lightrect = rect;
 
 							// Remove slice multipliers from rect:
 							switch (light.GetType())
 							{
 							case LightComponent::DIRECTIONAL:
-								light.shadow_rect.w /= int(light.cascade_distances.size());
+								lightrect.w /= int(light.cascade_distances.size());
 								break;
 							case LightComponent::POINT:
-								light.shadow_rect.w /= 6;
+								lightrect.w /= 6;
 								break;
 							}
 						}
-						else
-						{
-							light.direction = {};
-						}
 					}
 
-					if ((int)shadowMapAtlas.desc.width < packer.width || (int)shadowMapAtlas.desc.height < packer.height)
+					if ((int)shadowMapAtlas.desc.width < vis.shadow_packer.width || (int)shadowMapAtlas.desc.height < vis.shadow_packer.height)
 					{
 						TextureDesc desc;
-						desc.width = uint32_t(packer.width);
-						desc.height = uint32_t(packer.height);
+						desc.width = uint32_t(vis.shadow_packer.width);
+						desc.height = uint32_t(vis.shadow_packer.height);
 						desc.format = format_depthbuffer_shadowmap;
 						desc.bind_flags = BindFlag::DEPTH_STENCIL | BindFlag::SHADER_RESOURCE;
 						desc.layout = ResourceState::SHADER_RESOURCE;
@@ -3421,7 +3432,7 @@ void UpdatePerFrameData(
 						device->SetName(&shadowMapAtlas_Transparent, "shadowMapAtlas_Transparent");
 
 					}
-					
+
 					break;
 				}
 				else
@@ -3437,6 +3448,15 @@ void UpdatePerFrameData(
 		wi::profiler::EndRange(range);
 	}
 
+	wi::profiler::EndRange(range); // Frustum Culling
+}
+void UpdatePerFrameData(
+	Scene& scene,
+	const Visibility& vis,
+	FrameCB& frameCB,
+	float dt
+)
+{
 	// Calculate volumetric cloud shadow data:
 	if (vis.scene->weather.IsVolumetricClouds() && vis.scene->weather.IsVolumetricCloudsCastShadow())
 	{
@@ -3582,13 +3602,13 @@ void UpdatePerFrameData(
 		frameCB.rain_blocker_matrix_prev = frameCB.rain_blocker_matrix;
 		frameCB.rain_blocker_matrix_inverse_prev = frameCB.rain_blocker_matrix_inverse;
 		frameCB.rain_blocker_mad = XMFLOAT4(
-			float(scene.rain_blocker_dummy_light.shadow_rect.w) / float(shadowMapAtlas.desc.width),
-			float(scene.rain_blocker_dummy_light.shadow_rect.h) / float(shadowMapAtlas.desc.height),
-			float(scene.rain_blocker_dummy_light.shadow_rect.x) / float(shadowMapAtlas.desc.width),
-			float(scene.rain_blocker_dummy_light.shadow_rect.y) / float(shadowMapAtlas.desc.height)
+			float(vis.rain_blocker_shadow_rect.w) / float(shadowMapAtlas.desc.width),
+			float(vis.rain_blocker_shadow_rect.h) / float(shadowMapAtlas.desc.height),
+			float(vis.rain_blocker_shadow_rect.x) / float(shadowMapAtlas.desc.width),
+			float(vis.rain_blocker_shadow_rect.y) / float(shadowMapAtlas.desc.height)
 		);
 		SHCAM shcam;
-		CreateDirLightShadowCams(vis.scene->rain_blocker_dummy_light, *vis.camera, &shcam, 1);
+		CreateDirLightShadowCams(vis.scene->rain_blocker_dummy_light, *vis.camera, &shcam, 1, vis.rain_blocker_shadow_rect);
 		XMStoreFloat4x4(&frameCB.rain_blocker_matrix, shcam.view_projection);
 		XMStoreFloat4x4(&frameCB.rain_blocker_matrix_inverse, XMMatrixInverse(nullptr, shcam.view_projection));
 	}
@@ -4022,13 +4042,14 @@ void UpdateRenderData(
 			shaderentity.indices = ~0;
 
 			bool shadow = light.IsCastingShadow() && !light.IsStatic();
+			const wi::rectpacker::Rect& shadow_rect = vis.visibleLightShadowRects[lightIndex];
 
 			if (shadow)
 			{
-				shaderentity.shadowAtlasMulAdd.x = light.shadow_rect.w * atlas_dim_rcp.x;
-				shaderentity.shadowAtlasMulAdd.y = light.shadow_rect.h * atlas_dim_rcp.y;
-				shaderentity.shadowAtlasMulAdd.z = light.shadow_rect.x * atlas_dim_rcp.x;
-				shaderentity.shadowAtlasMulAdd.w = light.shadow_rect.y * atlas_dim_rcp.y;
+				shaderentity.shadowAtlasMulAdd.x = shadow_rect.w * atlas_dim_rcp.x;
+				shaderentity.shadowAtlasMulAdd.y = shadow_rect.h * atlas_dim_rcp.y;
+				shaderentity.shadowAtlasMulAdd.z = shadow_rect.x * atlas_dim_rcp.x;
+				shaderentity.shadowAtlasMulAdd.w = shadow_rect.y * atlas_dim_rcp.y;
 				shaderentity.SetIndices(matrixCounter, 0);
 			}
 
@@ -4041,7 +4062,7 @@ void UpdateRenderData(
 				if (shadow && !light.cascade_distances.empty())
 				{
 					SHCAM* shcams = (SHCAM*)alloca(sizeof(SHCAM) * light.cascade_distances.size());
-					CreateDirLightShadowCams(light, *vis.camera, shcams, light.cascade_distances.size());
+					CreateDirLightShadowCams(light, *vis.camera, shcams, light.cascade_distances.size(), shadow_rect);
 					for (size_t cascade = 0; cascade < light.cascade_distances.size(); ++cascade)
 					{
 						std::memcpy(&matrixArray[matrixCounter++], &shcams[cascade].view_projection, sizeof(XMMATRIX));
@@ -4646,7 +4667,12 @@ void UpdateRenderDataAsync(
 	// Compute water simulation:
 	if (vis.scene->weather.IsOceanEnabled())
 	{
-		if (!GetOcclusionCullingEnabled() || !vis.scene->ocean.IsOccluded())
+		bool occluded = false;
+		if (vis.flags & Visibility::ALLOW_OCCLUSION_CULLING)
+		{
+			occluded = vis.scene->ocean.IsOccluded();
+		}
+		if (!occluded)
 		{
 			auto range = wi::profiler::BeginRangeGPU("Ocean - Simulate", cmd);
 			vis.scene->ocean.UpdateDisplacementMap(vis.scene->weather.oceanParameters, cmd);
@@ -5604,6 +5630,7 @@ void DrawShadowmaps(
 			{
 				continue;
 			}
+			const wi::rectpacker::Rect& shadow_rect = vis.visibleLightShadowRects[lightIndex];
 
 			switch (light.GetType())
 			{
@@ -5617,7 +5644,7 @@ void DrawShadowmaps(
 				const uint32_t cascade_count = std::min((uint32_t)light.cascade_distances.size(), max_viewport_count);
 				Viewport* viewports = (Viewport*)alloca(sizeof(Viewport) * cascade_count);
 				SHCAM* shcams = (SHCAM*)alloca(sizeof(SHCAM) * cascade_count);
-				CreateDirLightShadowCams(light, *vis.camera, shcams, cascade_count);
+				CreateDirLightShadowCams(light, *vis.camera, shcams, cascade_count, shadow_rect);
 
 				renderQueue.init();
 				bool transparentShadowsRequested = false;
@@ -5660,10 +5687,10 @@ void DrawShadowmaps(
 						cb.cameras[cascade].output_index = cascade;
 
 						Viewport& vp = viewports[cascade];
-						vp.top_left_x = float(light.shadow_rect.x + cascade * light.shadow_rect.w);
-						vp.top_left_y = float(light.shadow_rect.y);
-						vp.width = float(light.shadow_rect.w);
-						vp.height = float(light.shadow_rect.h);
+						vp.top_left_x = float(shadow_rect.x + cascade * shadow_rect.w);
+						vp.top_left_y = float(shadow_rect.y);
+						vp.width = float(shadow_rect.w);
+						vp.height = float(shadow_rect.h);
 						vp.min_depth = 0.0f;
 						vp.max_depth = 1.0f;
 					}
@@ -5688,10 +5715,10 @@ void DrawShadowmaps(
 						device->BindDynamicConstantBuffer(cb, CBSLOT_RENDERER_CAMERA, cmd);
 
 						Viewport vp;
-						vp.top_left_x = float(light.shadow_rect.x + cascade * light.shadow_rect.w);
-						vp.top_left_y = float(light.shadow_rect.y);
-						vp.width = float(light.shadow_rect.w);
-						vp.height = float(light.shadow_rect.h);
+						vp.top_left_x = float(shadow_rect.x + cascade * shadow_rect.w);
+						vp.top_left_y = float(shadow_rect.y);
+						vp.width = float(shadow_rect.w);
+						vp.height = float(shadow_rect.h);
 						vp.min_depth = 0.0f;
 						vp.max_depth = 1.0f;
 						device->BindViewports(1, &vp, cmd);
@@ -5759,10 +5786,10 @@ void DrawShadowmaps(
 					device->BindDynamicConstantBuffer(cb, CBSLOT_RENDERER_CAMERA, cmd);
 
 					Viewport vp;
-					vp.top_left_x = float(light.shadow_rect.x);
-					vp.top_left_y = float(light.shadow_rect.y);
-					vp.width = float(light.shadow_rect.w);
-					vp.height = float(light.shadow_rect.h);
+					vp.top_left_x = float(shadow_rect.x);
+					vp.top_left_y = float(shadow_rect.y);
+					vp.width = float(shadow_rect.w);
+					vp.height = float(shadow_rect.h);
 					vp.min_depth = 0.0f;
 					vp.max_depth = 1.0f;
 					device->BindViewports(1, &vp, cmd);
@@ -5787,10 +5814,10 @@ void DrawShadowmaps(
 					device->BindDynamicConstantBuffer(cb, CBSLOT_RENDERER_CAMERA, cmd);
 
 					Viewport vp;
-					vp.top_left_x = float(light.shadow_rect.x);
-					vp.top_left_y = float(light.shadow_rect.y);
-					vp.width = float(light.shadow_rect.w);
-					vp.height = float(light.shadow_rect.h);
+					vp.top_left_x = float(shadow_rect.x);
+					vp.top_left_y = float(shadow_rect.y);
+					vp.width = float(shadow_rect.w);
+					vp.height = float(shadow_rect.h);
 					vp.min_depth = 0.0f;
 					vp.max_depth = 1.0f;
 					device->BindViewports(1, &vp, cmd);
@@ -5840,10 +5867,10 @@ void DrawShadowmaps(
 						frusta[camera_count] = cameras[shcam].frustum;
 						camera_count++;
 					}
-					vp[shcam].top_left_x = float(light.shadow_rect.x + shcam * light.shadow_rect.w);
-					vp[shcam].top_left_y = float(light.shadow_rect.y);
-					vp[shcam].width = float(light.shadow_rect.w);
-					vp[shcam].height = float(light.shadow_rect.h);
+					vp[shcam].top_left_x = float(shadow_rect.x + shcam * shadow_rect.w);
+					vp[shcam].top_left_y = float(shadow_rect.y);
+					vp[shcam].width = float(shadow_rect.w);
+					vp[shcam].height = float(shadow_rect.h);
 					vp[shcam].min_depth = 0.0f;
 					vp[shcam].max_depth = 1.0f;
 				}
@@ -5917,10 +5944,10 @@ void DrawShadowmaps(
 						device->BindDynamicConstantBuffer(cb, CBSLOT_RENDERER_CAMERA, cmd);
 
 						Viewport vp;
-						vp.top_left_x = float(light.shadow_rect.x + shcam * light.shadow_rect.w);
-						vp.top_left_y = float(light.shadow_rect.y);
-						vp.width = float(light.shadow_rect.w);
-						vp.height = float(light.shadow_rect.h);
+						vp.top_left_x = float(shadow_rect.x + shcam * shadow_rect.w);
+						vp.top_left_y = float(shadow_rect.y);
+						vp.width = float(shadow_rect.w);
+						vp.height = float(shadow_rect.h);
 						vp.min_depth = 0;
 						vp.max_depth = 1;
 						device->BindViewports(1, &vp, cmd);
@@ -5949,7 +5976,7 @@ void DrawShadowmaps(
 		if(vis.scene->weather.rain_amount > 0)
 		{
 			SHCAM shcam;
-			CreateDirLightShadowCams(vis.scene->rain_blocker_dummy_light, *vis.camera, &shcam, 1);
+			CreateDirLightShadowCams(vis.scene->rain_blocker_dummy_light, *vis.camera, &shcam, 1, vis.rain_blocker_shadow_rect);
 
 			renderQueue.init();
 			for (size_t i = 0; i < vis.scene->aabb_objects.size(); ++i)
@@ -5981,10 +6008,10 @@ void DrawShadowmaps(
 				cb.cameras[cascade].output_index = cascade;
 
 				Viewport vp;
-				vp.top_left_x = float(vis.scene->rain_blocker_dummy_light.shadow_rect.x + cascade * vis.scene->rain_blocker_dummy_light.shadow_rect.w);
-				vp.top_left_y = float(vis.scene->rain_blocker_dummy_light.shadow_rect.y);
-				vp.width = float(vis.scene->rain_blocker_dummy_light.shadow_rect.w);
-				vp.height = float(vis.scene->rain_blocker_dummy_light.shadow_rect.h);
+				vp.top_left_x = float(vis.rain_blocker_shadow_rect.x + cascade * vis.rain_blocker_shadow_rect.w);
+				vp.top_left_y = float(vis.rain_blocker_shadow_rect.y);
+				vp.width = float(vis.rain_blocker_shadow_rect.w);
+				vp.height = float(vis.rain_blocker_shadow_rect.h);
 				vp.min_depth = 0.0f;
 				vp.max_depth = 1.0f;
 
@@ -6016,7 +6043,7 @@ void DrawScene(
 	const bool transparent = flags & DRAWSCENE_TRANSPARENT;
 	const bool hairparticle = flags & DRAWSCENE_HAIRPARTICLE;
 	const bool impostor = flags & DRAWSCENE_IMPOSTOR;
-	const bool occlusion = (flags & DRAWSCENE_OCCLUSIONCULLING) && GetOcclusionCullingEnabled();
+	const bool occlusion = (flags & DRAWSCENE_OCCLUSIONCULLING) && (vis.flags & Visibility::ALLOW_OCCLUSION_CULLING) && GetOcclusionCullingEnabled();
 	const bool ocean = flags & DRAWSCENE_OCEAN;
 	const bool skip_planar_reflection_objects = flags & DRAWSCENE_SKIP_PLANAR_REFLECTION_OBJECTS;
 	const bool foreground_only = flags & DRAWSCENE_FOREGROUND_ONLY;
@@ -13621,9 +13648,19 @@ void Postprocess_RTShadow(
 		device->EventEnd(cmd);
 	}
 
-	device->Barrier(GPUBarrier::Image(&output, output.desc.layout, ResourceState::COPY_DST), cmd);
-	device->CopyResource(&output, &res.temporal[temporal_output], cmd);
-	device->Barrier(GPUBarrier::Image(&output, ResourceState::COPY_DST, output.desc.layout), cmd);
+	{
+		GPUBarrier barriers[] = {
+			GPUBarrier::Image(&output, output.desc.layout, ResourceState::COPY_DST),
+			GPUBarrier::Image(&res.temporal[temporal_output], output.desc.layout, ResourceState::COPY_SRC),
+		};
+		device->Barrier(barriers, arraysize(barriers), cmd);
+		device->CopyResource(&output, &res.temporal[temporal_output], cmd);
+		for (auto& x : barriers)
+		{
+			std::swap(x.image.layout_before, x.image.layout_after);
+		}
+		device->Barrier(barriers, arraysize(barriers), cmd);
+	}
 
 	wi::profiler::EndRange(prof_range);
 	device->EventEnd(cmd);
@@ -15622,7 +15659,7 @@ void Postprocess_FSR2(
 			uint32_t    flags;
 		};
 		Fsr2GenerateReactiveConstants constants = {};
-		static float scale = 1.0f;
+		static float scale = 0.5f;
 		static float threshold = 0.2f;
 		static float binaryValue = 0.9f;
 		constants.scale = scale;
@@ -16014,6 +16051,50 @@ void Postprocess_Downsample4x(
 		&output,
 	};
 	device->BindUAVs(uavs, 0, arraysize(uavs), cmd);
+
+	{
+		GPUBarrier barriers[] = {
+			GPUBarrier::Image(&output, output.desc.layout, ResourceState::UNORDERED_ACCESS),
+		};
+		device->Barrier(barriers, arraysize(barriers), cmd);
+	}
+
+	device->Dispatch(
+		(desc.width + POSTPROCESS_BLOCKSIZE - 1) / POSTPROCESS_BLOCKSIZE,
+		(desc.height + POSTPROCESS_BLOCKSIZE - 1) / POSTPROCESS_BLOCKSIZE,
+		1,
+		cmd
+	);
+
+	{
+		GPUBarrier barriers[] = {
+			GPUBarrier::Memory(),
+			GPUBarrier::Image(&output, ResourceState::UNORDERED_ACCESS, output.desc.layout),
+		};
+		device->Barrier(barriers, arraysize(barriers), cmd);
+	}
+
+	device->EventEnd(cmd);
+}
+void Postprocess_Lineardepth(
+	const Texture& input,
+	const Texture& output,
+	CommandList cmd
+)
+{
+	device->EventBegin("Postprocess_Lineardepth", cmd);
+
+	device->BindComputeShader(&shaders[CSTYPE_POSTPROCESS_LINEARDEPTH], cmd);
+
+	const TextureDesc& desc = output.GetDesc();
+
+	device->BindResource(&input, 0, cmd);
+
+	device->BindUAV(&output, 0, cmd, 0);
+	device->BindUAV(&output, 1, cmd, 1);
+	device->BindUAV(&output, 2, cmd, 2);
+	device->BindUAV(&output, 3, cmd, 3);
+	device->BindUAV(&output, 4, cmd, 4);
 
 	{
 		GPUBarrier barriers[] = {

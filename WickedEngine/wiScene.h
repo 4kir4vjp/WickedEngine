@@ -30,7 +30,7 @@ namespace wi::scene
 		wi::ecs::ComponentManager<LayerComponent>& layers = componentLibrary.Register<LayerComponent>("wi::scene::Scene::layers");
 		wi::ecs::ComponentManager<TransformComponent>& transforms = componentLibrary.Register<TransformComponent>("wi::scene::Scene::transforms");
 		wi::ecs::ComponentManager<HierarchyComponent>& hierarchy = componentLibrary.Register<HierarchyComponent>("wi::scene::Scene::hierarchy");
-		wi::ecs::ComponentManager<MaterialComponent>& materials = componentLibrary.Register<MaterialComponent>("wi::scene::Scene::materials", 2); // version = 2
+		wi::ecs::ComponentManager<MaterialComponent>& materials = componentLibrary.Register<MaterialComponent>("wi::scene::Scene::materials", 3); // version = 3
 		wi::ecs::ComponentManager<MeshComponent>& meshes = componentLibrary.Register<MeshComponent>("wi::scene::Scene::meshes", 2); // version = 2
 		wi::ecs::ComponentManager<ImpostorComponent>& impostors = componentLibrary.Register<ImpostorComponent>("wi::scene::Scene::impostors");
 		wi::ecs::ComponentManager<ObjectComponent>& objects = componentLibrary.Register<ObjectComponent>("wi::scene::Scene::objects", 3); // version = 3
@@ -42,7 +42,7 @@ namespace wi::scene
 		wi::ecs::ComponentManager<EnvironmentProbeComponent>& probes = componentLibrary.Register<EnvironmentProbeComponent>("wi::scene::Scene::probes", 1); // version = 1
 		wi::ecs::ComponentManager<ForceFieldComponent>& forces = componentLibrary.Register<ForceFieldComponent>("wi::scene::Scene::forces", 1); // version = 1
 		wi::ecs::ComponentManager<DecalComponent>& decals = componentLibrary.Register<DecalComponent>("wi::scene::Scene::decals", 1); // version = 1
-		wi::ecs::ComponentManager<AnimationComponent>& animations = componentLibrary.Register<AnimationComponent>("wi::scene::Scene::animations", 1); // version = 1
+		wi::ecs::ComponentManager<AnimationComponent>& animations = componentLibrary.Register<AnimationComponent>("wi::scene::Scene::animations", 2); // version = 2
 		wi::ecs::ComponentManager<AnimationDataComponent>& animation_datas = componentLibrary.Register<AnimationDataComponent>("wi::scene::Scene::animation_datas");
 		wi::ecs::ComponentManager<EmittedParticleSystem>& emitters = componentLibrary.Register<EmittedParticleSystem>("wi::scene::Scene::emitters");
 		wi::ecs::ComponentManager<HairParticleSystem>& hairs = componentLibrary.Register<HairParticleSystem>("wi::scene::Scene::hairs");

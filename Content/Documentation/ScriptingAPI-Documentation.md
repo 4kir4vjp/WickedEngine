@@ -134,7 +134,13 @@ You can use the Renderer with the following functions, all of which are in the g
 - SetDebugPartitionTreeEnabled(bool enabled)
 - SetDebugBonesEnabled(bool enabled)
 - SetDebugEittersEnabled(bool enabled)
+- SetDebugEnvProbesEnabled(bool enabled)
 - SetDebugForceFieldsEnabled(bool enabled)
+- SetDebugCamerasEnabled(bool value)
+- SetDebugCollidersEnabled(bool value)
+- SetGridHelperEnabled(bool value)
+- SetDDGIDebugEnabled(bool value)
+- SetDebugCamerasEnabled(bool value)
 - SetVSyncEnabled(opt bool enabled)
 - SetOcclusionCullingEnabled(bool enabled)
 - DrawLine(Vector origin,end, opt Vector color)
@@ -571,10 +577,13 @@ A four component floating point vector. Provides efficient calculations with SIM
 - Dot(Vector v1,v2) : Vector result
 - Cross(Vector v1,v2) : Vector result
 - Lerp(Vector v1,v2, float t) : Vector result
-- QuaternionMultiply(Vector v1,v2) : Vector result
-- QuaternionFromRollPitchYaw(Vector rotXYZ) : Vector result
-- QuaternionToRollPitchYaw(Vector quaternion) : Vector result
-- QuaternionSlerp(Vector v1,v2, float t) : Vector result
+- Rotate(Vector v1,quaternion) : Vector result -- rotates the first argument 3D vector with the second argument quaternion
+- QuaternionInverse(Vector quaternion) : Vector resultQuaternion
+- QuaternionMultiply(Vector quaternion1,quaternion2) : Vector resultQuaternion
+- QuaternionFromRollPitchYaw(Vector rotXYZ) : Vector resultQuaternion
+- QuaternionToRollPitchYaw(Vector quaternion) : Vector resultQuaternion
+- QuaternionSlerp(Vector quaternion1,quaternion2, float t) : Vector resultQuaternion
+- Slerp(Vector quaternion1,quaternion2, float t) : Vector resultQuaternion -- same as QuaternionSlerp
 - GetAngle(Vector a,b,axis, opt float max_angle = math.pi * 2) : float result	-- computes the signed angle between two 3D vectors around specified axis
 
 ### Matrix

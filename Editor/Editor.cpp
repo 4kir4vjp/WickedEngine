@@ -1925,6 +1925,13 @@ void EditorComponent::PostUpdate()
 	RenderPath2D::PostUpdate();
 
 	renderPath->PostUpdate();
+
+	// This needs to be after scene was updated fully by EditorComponent's renderPath
+	//	Because this will just render the scene without updating its resources
+	if (renderPath->getSceneUpdateEnabled()) // only update preview if scene was updated at all by main renderPath
+	{
+		componentsWnd.cameraComponentWnd.preview.RenderPreview();
+	}
 }
 void EditorComponent::Render() const
 {
@@ -2108,7 +2115,7 @@ void EditorComponent::Render() const
 
 				// Draw solid blocks of selected materials
 				fx.stencilRef = EDITORSTENCILREF_HIGHLIGHT_MATERIAL;
-				wi::image::Draw(wi::texturehelper::getWhite(), fx, cmd);
+				wi::image::Draw(nullptr, fx, cmd);
 
 				device->RenderPassEnd(cmd);
 			}
@@ -2143,7 +2150,7 @@ void EditorComponent::Render() const
 
 				// Draw solid blocks of selected objects
 				fx.stencilRef = EDITORSTENCILREF_HIGHLIGHT_OBJECT;
-				wi::image::Draw(wi::texturehelper::getWhite(), fx, cmd);
+				wi::image::Draw(nullptr, fx, cmd);
 
 				device->RenderPassEnd(cmd);
 			}

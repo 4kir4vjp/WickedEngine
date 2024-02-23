@@ -9,7 +9,7 @@ namespace wi::version
 	// minor features, major updates, breaking compatibility changes
 	const int minor = 71;
 	// minor bug fixes, alterations, refactors, updates
-	const int revision = 367;
+	const int revision = 381;
 
 	const std::string version_string = std::to_string(major) + "." + std::to_string(minor) + "." + std::to_string(revision);
 
@@ -114,6 +114,8 @@ Titoutan
 Willow
 Aldo
 lokimx
+K. Osterman
+Nomad
 		)";
 
 		return credits;
